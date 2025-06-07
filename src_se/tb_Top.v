@@ -1,0 +1,340 @@
+/*********************************************************************
+                                                              
+    仿真专用模块          
+    描述: 仿真接入SDRAM模拟器 
+    作者: 李国旗 asdcdqwe@163.com  
+    日期: 2025.5.20  
+    版权所有：一生一芯 
+    Copyright (C) ysyx.org       
+                                                   
+*******************************************************************/
+`timescale 1ns/1ps
+`include "define.v"
+
+module tb_Top ;
+
+parameter     P_SYS         =        10        ; //200MHZ
+parameter     P_SDR         =        20        ; //100MHZ
+reg                        AxiClk   ;
+reg                        AxiRest   ;
+reg                        SdramClk    ;
+reg                        SdramRest     ;
+
+reg [`AXIID              ] AwidSlave    ;
+reg [31:0                ] AwaddrSlave  ; //sdram的地址范围导致会有一部分no used
+reg [`AXILEN             ] AwlenSlave   ;
+reg [`AXISIZE            ] AwsizeSlave  ;
+reg [`AXIBURST           ] AwburstSlave ;
+reg                        AwlockSlave  ; //暂时不支持原子访问，如果需要后续在添加，或者直接用户软实现
+reg [`AXICACHE           ] AwcacheSlave ; //主要用于缓存和一致性，这里不会使用，目前所支持的状态为x01x，即nubuffer and canmodify
+reg [`AXIPORT            ] AwportSlave  ; //由于sdram并不需要知道安全类型，所以忽略该信号   
+reg                        AwvalidSlave ;
+wire                       AwreadySlave ;
+
+reg [`AXIID              ] WidSlave     ;
+reg [31:0                ] WdataSlave   ;
+reg [`AXISTRB            ] WstrbSlave   ;
+reg                        WlastSlave   ;
+reg                        WvalidSlave  ;
+wire                       WreadySlave  ;
+
+wire [`AXIID             ] BidSlave     ; //sdram写通道如果发生写错误就会直接stop，所以可以直接回传okey信息
+wire [`AXIRESP           ] BrespSlave   ;
+wire                       BvalidSlave  ;
+reg                        BreadySlave  ;
+
+reg  [`AXIID             ] AridSlave    ;
+reg  [31:0               ] AraddrSlave  ;
+reg  [`AXILEN            ] ArlenSlave   ;
+reg  [`AXISIZE           ] ArsizeSlave  ;
+reg  [`AXIBURST          ] ArBurstSlave ;
+reg                        ArlockSlave  ;
+reg  [`AXICACHE          ] ArcacheSlave ;
+reg  [`AXIPORT           ] ArportSlave  ;
+reg                        ArvalidSlave ;
+wire                       ArreadySlave ;
+
+wire  [`AXIID            ] RidSlave     ;
+wire  [31:0              ] RdataSlave   ;
+wire  [`AXIRESP          ] RrespSlave   ;
+wire                       RlastSlave   ;
+wire                       RvalidSlave  ;
+reg                        RreadySlave  ;
+
+
+
+integer fd1 ;
+integer err1;
+reg [320:0] str1 ; 
+
+integer fd2 ;
+integer err2;
+reg [320:0] str2 ; 
+
+integer code ;
+integer seek ;
+integer ErrCnt;
+reg [31:0] mem ;
+integer status;
+
+initial
+begin
+AxiClk=0;
+forever #(P_SYS/2) AxiClk= !AxiClk;
+end
+
+initial
+begin
+SdramClk=0;
+forever #(P_SDR/2) SdramClk= !SdramClk;
+end
+
+initial begin
+    AxiRest = 0         ;
+    SdramRest = 0       ;
+    AwidSlave = 4'b0    ;
+    AwaddrSlave = 32'b0 ;
+    AwlenSlave = 8'b0   ;
+    AwsizeSlave = 3'b0  ;
+    AwburstSlave = 2'b0 ;
+    AwlockSlave = 1'b0  ;
+    AwcacheSlave = 4'b0 ;
+    AwportSlave = 3'b0  ;
+    AwvalidSlave = 1'b0 ;
+
+    WidSlave = 4'b0     ;
+    WdataSlave = 32'b0  ;
+    WstrbSlave = 4'b0   ;
+    WlastSlave = 1'b0   ;
+    WvalidSlave = 1'b0  ;
+
+    BreadySlave = 1'b0  ;
+
+    AridSlave = 4'b0    ;
+    AraddrSlave = 32'b0 ;
+    ArlenSlave = 8'b0   ;
+    ArsizeSlave = 3'b0  ;
+    ArBurstSlave = 2'b0 ;
+    ArlockSlave = 1'b0  ;
+    ArcacheSlave = 4'b0 ;
+    ArportSlave = 3'b0  ;
+    ArvalidSlave = 1'b0 ;
+
+    RreadySlave = 1'b0  ;
+
+    ErrCnt = 0 ;
+    // fd1 = $fopen("./tengwangge_utf8.bin", "r") ;
+    // err1 = $ferror(fd1, str1);
+    // $display("File1 descriptor is: %h.", fd1 );//非零值
+    // $display("Error1 number is: %h.", err1 );  //0
+    // $display("Error2 info is: %s.", str1 );    //0
+    // //$fclose(fd1);
+
+    // fd2 = $fopen("./Writefile.bin", "w") ;
+    // err2 = $ferror(fd2, str2);
+    // $display("File1 descriptor is: %h.", fd2 );//非零值
+    // $display("Error1 number is: %h.", err2 );  //0
+    // $display("Error2 info is: %s.", str2 );    //0
+    //$fclose(fd2);
+
+    // seek = $ftell(fd1);
+    // $fseek(fd1, seek, 0);
+
+    #100; 
+    AxiRest = 1         ;
+    SdramRest = 1       ;
+    $display("-------------------------------------- ");
+    $display(" Case-1: Single Write/Read Case        ");
+    $display("-------------------------------------- ");
+    axi_write_burst(32'b00000000000000000000000011110000, 1, 3'b000, 4'b0001,32'd10);
+    axi_read_burst(32'b00000000000000000000000011110000, 1, 3'b000);
+    axi_write_burst(32'b00000000000000000000000111110000, 6, 3'b000, 4'b0001,32'd60);
+    axi_read_burst(32'b00000000000000000000000111110000, 6, 3'b000);
+    axi_write_burst(32'b00000000001100000000000011110000, 1, 3'b001, 4'b0011,32'hffff);
+    axi_read_burst(32'b00000000001100000000000011110000, 1, 3'b001);
+    axi_write_burst(32'b00000000001100000000000111110000, 6, 3'b001, 4'b0011,32'hffff);
+    axi_read_burst(32'b00000000001100000000000111110000, 6, 3'b001);
+    axi_write_burst(32'b00000000000000000000000011110000, 1, 3'b010, 4'b1111,32'd1);
+    axi_read_burst(32'b00000000000000000000000011110000, 1, 3'b010);
+    axi_write_burst(32'b00000000000000000000000011111100, 128, 3'b010, 4'b1111,32'd128);
+    axi_write_burst(32'b00000000001100111000011111100000, 99, 3'b010, 4'b1111,32'd99);
+    axi_read_burst(32'b00000000000000000000000011111100, 128, 3'b010);
+    axi_read_burst(32'b00000000001100111000011111100000, 99, 3'b010);
+    axi_write_burst(32'b00000000000000111111100011110000, 16, 3'b010, 4'b1111,32'd16);
+    axi_read_burst(32'b00000000000000111111100011110000, 16, 3'b010);
+
+    #100;
+        $display("###############################");
+    if(ErrCnt == 0)
+        $display("STATUS: SDRAM Write/Read TEST PASSED");
+    else
+        $display("ERROR:  SDRAM Write/Read TEST FAILED");
+        $display("###############################");
+
+		
+	#100000000;
+    $finish;
+
+end
+
+// always #(P_SYS/2) AxiClk = ~AxiClk ;
+// always #(P_SDR/2) SdramClk = ~SdramClk ;
+
+task axi_write_burst;
+    input [31:0] addr;
+    input [7:0 ] len;
+    input [2:0 ] size ;
+    input [3:0 ] mask ;
+    input [31:0] data ;
+    integer i;
+    begin
+        // 发起 AW 通道
+        AwaddrSlave    = addr;
+        AwlenSlave     = len; // Burst length = 128 transfers - 1
+        AwsizeSlave    = size; // 4字节传输
+        AwburstSlave   = 2'b01;  // INCR 类型
+        AwvalidSlave   = 1'b1;
+        @(posedge AxiClk);
+        while (!AwreadySlave) @(posedge AxiClk);
+            AwidSlave = 4'b0    ;
+            AwaddrSlave = 32'b0 ;
+            AwlenSlave = 8'b0   ;
+            AwsizeSlave = 3'b0  ;
+            AwburstSlave = 2'b0 ;
+            AwvalidSlave = 1'b0;
+
+        // W 通道：写入数据
+        for (i = 0; i < len ; i = i + 1) begin
+            //status = $fgets(WdataSlave, fd1);
+            WdataSlave  = data;
+            WstrbSlave  = mask;
+            WvalidSlave = 1'b1;
+            WlastSlave  = (i == len-1);
+            @(posedge AxiClk);
+            while (!WreadySlave) @(posedge AxiClk);
+        end
+        WdataSlave  = 32'b0;
+        WstrbSlave  = 4'b0000;
+        WvalidSlave = 1'b0;
+        WlastSlave  = 1'b0;
+
+        // 等待B通道响应
+        BreadySlave = 1'b1;
+        while (!BvalidSlave) @(posedge AxiClk);
+        BreadySlave = 1'b0;
+    end
+endtask
+
+task axi_read_burst;
+    input [31:0] addr;
+    input [7:0 ] len ;
+    input [2:0 ] size ;
+    integer i;
+    begin
+        // 发起 AR 通道
+        AraddrSlave    = addr;
+        ArlenSlave     = len;
+        ArsizeSlave    = size;
+        ArBurstSlave   = 2'b01;
+        ArvalidSlave   = 1'b1;
+        @(posedge AxiClk);
+        while (!ArreadySlave) @(posedge AxiClk);
+        ArvalidSlave = 1'b0;
+
+        // 读取数据
+        RreadySlave = 1'b1;
+        for (i = 0; i < len; i = i + 1) begin
+            @(posedge AxiClk);
+            while (!RvalidSlave) @(posedge AxiClk);
+            mem = RdataSlave;
+            $display("%h", mem);
+            if (RlastSlave) begin
+                RreadySlave = 1'b0;
+            end
+        end
+        
+    end
+endtask
+
+
+wire  [15:0                  ] DqConect             ;
+wire  [12:0                  ] AddrConect           ;
+wire  [1 : 0                 ] BankConect           ;
+wire                           ClkConect            ;
+wire                           CkeConect            ; 
+wire                           Cs_nConect           ;
+wire                           Ras_nConect          ;
+wire                           Cas_nConect          ;
+wire                           We_nConect           ;
+wire  [1:0                   ] DqmConect            ;
+
+AxiToSdram u_AxiToSdram(
+    .AxiClk        ( AxiClk        ),
+    .AxiRest       ( AxiRest       ),
+    .SdramClk      ( SdramClk      ),
+    .SdramRest     ( SdramRest     ),
+    .AwidSlave     ( AwidSlave     ),
+    .AwaddrSlave   ( AwaddrSlave   ),
+    .AwlenSlave    ( AwlenSlave    ),
+    .AwsizeSlave   ( AwsizeSlave   ),
+    .AwburstSlave  ( AwburstSlave  ),
+    .AwlockSlave   ( AwlockSlave   ),
+    .AwcacheSlave  ( AwcacheSlave  ),
+    .AwportSlave   ( AwportSlave   ),
+    .AwvalidSlave  ( AwvalidSlave  ),
+    .AwreadySlave  ( AwreadySlave  ),
+    .WidSlave      ( WidSlave      ),
+    .WdataSlave    ( WdataSlave    ),
+    .WstrbSlave    ( WstrbSlave    ),
+    .WlastSlave    ( WlastSlave    ),
+    .WvalidSlave   ( WvalidSlave   ),
+    .WreadySlave   ( WreadySlave   ),
+    .BidSlave      ( BidSlave      ),
+    .BrespSlave    ( BrespSlave    ),
+    .BvalidSlave   ( BvalidSlave   ),
+    .BreadySlave   ( BreadySlave   ),
+    .AridSlave     ( AridSlave     ),
+    .AraddrSlave   ( AraddrSlave   ),
+    .ArlenSlave    ( ArlenSlave    ),
+    .ArsizeSlave   ( ArsizeSlave   ),
+    .ArBurstSlave  ( ArBurstSlave  ),
+    .ArlockSlave   ( ArlockSlave   ),
+    .ArcacheSlave  ( ArcacheSlave  ),
+    .ArportSlave   ( ArportSlave   ),
+    .ArvalidSlave  ( ArvalidSlave  ),
+    .ArreadySlave  ( ArreadySlave  ),
+    .RidSlave      ( RidSlave      ),
+    .RdataSlave    ( RdataSlave    ),
+    .RrespSlave    ( RrespSlave    ),
+    .RlastSlave    ( RlastSlave    ),
+    .RvalidSlave   ( RvalidSlave   ),
+    .RreadySlave   ( RreadySlave   ),
+    .ChipDq        ( DqConect      ),
+    .ChipAddr      ( AddrConect    ),
+    .ChipBank      ( BankConect    ),
+    .ChipClk       ( ClkConect     ),
+    .ChipCke       ( CkeConect     ),
+    .ChipCs_n      ( Cs_nConect    ),
+    .ChipRas_n     ( Ras_nConect   ),
+    .ChipCas_n     ( Cas_nConect   ),
+    .ChipWe_n      ( We_nConect    ),
+    .ChipDqm       ( DqmConect     )
+);
+
+mt48lc32m16a2 u_mt48lc32m16a2(
+    .Dq    ( DqConect    ),
+    .Addr  ( AddrConect  ),
+    .Ba    ( BankConect  ),
+    .Clk   ( ClkConect   ),
+    .Cke   ( CkeConect   ),
+    .Cs_n  ( Cs_nConect  ),
+    .Ras_n ( Ras_nConect ),
+    .Cas_n ( Cas_nConect ),
+    .We_n  ( We_nConect  ),
+    .Dqm   ( DqmConect   )
+);
+
+
+
+
+endmodule
