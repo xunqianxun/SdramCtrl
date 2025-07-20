@@ -14,3 +14,6 @@
 
 可以通过VCS或者ModelSim进行验证其中`tb_top.v`为testbench，`mt48lc32m16a2.v`为颗粒模型，其余为源文件。
 
+## 仿真截图
+![Vivado](/pic/vivado.png "viavdo")
+![modulesim](/pic/modlesim.png "modulesim")
